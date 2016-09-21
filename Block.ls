@@ -1,27 +1,5 @@
-class Serializable
 
-  serialize: ->
-    res = {}
-
-    @
-      |> keys
-      |> filter ~> not isType \Function @[it]
-      # |> map ~>
-      #   if @series
-      #     @[it].serialize!
-      #   else
-      #     @[it]
-      |> each   ~> res[it] = @[it]
-
-    # console.log 'RES' res
-    Pack.encode res
-
-  @deserialize = ->
-    new @ Pack.decode it
-
-
-
-class TxTree extends Serializable
+class TxTree
 
   ->
 
@@ -53,32 +31,46 @@ class BlockHeader
 
   version: 1
 
-  (@previousHash, @target = Buffer.from('00000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF', \hex), @timestamp = new Date, @nonce = 0) ->
+  (@previousHash, @txCount, @target = '00000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF', @timestamp = new Date, @nonce = 0) ->
 
-class Block extends Serializable
+class Block
 
   (@previousHash, @txList = [], @hash) ->
-    @header = new BlockHeader @previousHash
-    @header.txCount = @txList.length
+    @header = new BlockHeader @previousHash, @txList.length
 
   prependCoinBase: ->
     @txList.unshift new CoinBaseTx it
+    @header.txCount++
 
   mine: ->
     if not @hash?
       @hash = @header.mine!
 
-  verify: ->
-    ### verify
-    # txlist (nb, tree)
-    # previousHash
-    # currentHash
+  verify: (previousHash) ->
 
-  @getFromDht = (hash) ->
-    console.log 'SEARCHING' hash
-    codecoin.dht.FindValue hash, (err, value) ->
-      console.log 'FOUND' value
-      console.log err, value
+    tests = [
+      @header.txCount is @txList.length
+      @header.previousHash is previousHash
+      @hash <= @header.target
+      @hash is Hash.Create JSON.stringify(@header) .Value!
+      # Verify transaction funds availability and merkelRoot validity
+    ]
+
+    if not all (is true), tests
+      return false
+
+    return true
+
+  @getFromDht = (hash, done) ->
+    # console.log 'SEARCHING' hash
+    codecoin.dht.FindValue hash, (err, bucket, value) ->
+      # console.log err, value
+      done err, value
+
+  @deserialize = ->
+    block = new Block it.previousHash, it.txList, it.hash
+    block.header = it.header
+    block
 
 
 # firstTx = new Transaction

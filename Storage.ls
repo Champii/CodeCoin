@@ -9,6 +9,8 @@ fs.mkdir = bluebird.promisify fs.mkdir
 fs.readFile = bluebird.promisify fs.readFile
 fs.writeFile = bluebird.promisify fs.writeFile
 fs.readdir = bluebird.promisify fs.readdir
+fs.appendFile = bluebird.promisify fs.appendFile
+fs.access = bluebird.promisify fs.access
 
 # console.log Hash
 
@@ -34,12 +36,13 @@ class Storage
   checkAndcreateStorageArbo: ->
     fs
       .mkdir Storage.PATH
+      .catch ->
       .then -> fs.mkdir Storage.WALLET_PATH
-      .catch -> it
+      .catch ->
       .then ~>
-        if not it?
-          console.out 'Folder created.'
-          fs.writeFile Storage.HEADERS_PATH, Storage.firstBlockHash.value
+        fs.access Storage.HEADERS_PATH
+      .catch ->
+        fs.writeFile Storage.HEADERS_PATH, Storage.firstBlockHash.value
 
   loadAddresses: ->
     console.progress 'Loading wallet'
@@ -63,6 +66,11 @@ class Storage
       buff = buff.slice Hash.LENGTH / 8
 
     console.log 'Height: ' + @headers.length + '.'
+
+  addHeader: ->
+    console.log 'ADD HEADER', it
+    @headers.push buff = Buffer.from it, \hex
+    fs.appendFile Storage.HEADERS_PATH, buff
 
 
 module.exports = Storage

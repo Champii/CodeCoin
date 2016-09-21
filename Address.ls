@@ -43,7 +43,6 @@ class Address
       .then ~> @privateKey = it
       .then ~> fs.readFile @pubPath
       .then ~> @publicKey = it
-      .catch ~> console.log "ERROR LOADING ADDRESS #{@name}" it
 
   @create = (name) ->
     folderPath = path.resolve Storage.WALLET_PATH, name

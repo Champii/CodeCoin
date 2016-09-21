@@ -1,15 +1,20 @@
 require! {
-  \events : EventEmitter
-  \node-dht : Dht
+  async
+  events : EventEmitter
   bluebird
-  \./Storage
+  \node-dht : Dht
+
   \./Block
+  \./Storage
 }
 
 class CodeCoin extends EventEmitter
 
   (@argv) ->
+    @receivedLog = []
+
     @argv.connect = @argv?.connect?.split ',' or []
+    @expectedSyncs = []
 
     console.progress 'DHT'
     @dht = new Dht @argv.port || 12345, @argv.connect.0, @argv.connect.1
@@ -57,6 +62,8 @@ class CodeCoin extends EventEmitter
 
   dispatch: ->
     it.sender.hash = new Hash Array.from it.sender.hash.value.data
+
+
     switch it.msg
       | \Sync => @syncReceived it
       | \HeaderHash => @headerHashReceived it
@@ -69,7 +76,7 @@ class CodeCoin extends EventEmitter
     node = find (-> not it.hash.value.compare msg.sender.hash.value), bucket
     node._SendMessage do
       msg: 'HeaderHash'
-      value: @storage.headers[msg.value to]
+      value: map (.toString \hex), @storage.headers[msg.value to]
       (err, status) ->
         console.log err, status
 
@@ -81,21 +88,85 @@ class CodeCoin extends EventEmitter
     node.answered = true
     node.headers = msg.value
 
-    if msg.value.length
-      console.log that, 'let to sync.'
-    else
-      console.log 'synced.'
-      return @emit 'ready'
+    msg.value = map (-> Hash.Create it), msg.value
 
-    for hash in msg.value
-      Block.getFromDht hash
+    if all (.answered), @expectedSyncs
+      first = @expectedSyncs.0.headers
+      res = @expectedSyncs
+        |> map (.headers)
+        |> all (=== first)
+
+      if res
+        if first.length
+          console.log first.length, 'left to sync.', first
+          blocks = []
+          first = first
+            |> map Hash~Create
+
+          async.mapSeries first, Block.getFromDht, (err, res) ~>
+            return console.log err if err?
+
+
+            bad = false
+            res
+              |> compact
+              |> map JSON.parse >> Block.deserialize
+              |> each ~>
+                return if bad
+                if it.verify (last @storage.headers).toString \hex
+                  @storage.addHeader it.hash
+                else
+                  bad = true
+                  console.log 'BAD BLOCKCHAIN !'
+
+            console.log 'Synced'
+            @ready = true
+            @emit 'ready'
+
+        else
+          console.log 'Synced'
+          @ready = true
+          @emit 'ready'
+
+
+
+
+    # if msg.value.length
+    #   console.log that, 'left to sync.'
+    # else
+    #   console.log 'synced.'
+    #   return @emit 'ready'
+
+    # for hash in msg.value
+    #   Block.getFromDht hash
 
   newBlockReceived: (msg) ->
-    console.log 'NEW BLOCK RECEIVED' msg
+    msgHash = Hash.Create JSON.stringify(msg.value) .Value!
+    if @receivedLog[msgHash]?
+      return ;
+
+    @receivedLog[msgHash] = msg
+
+    if msg.rebroadcast
+      @broadcast msg
+
+
+    block = Block.deserialize msg.value
+    console.log 'NEW BLOCK RECEIVED' block
+    if block.verify (last codecoin.storage.headers).toString \hex
+      @storage.addHeader block.hash
+      @emit 'NewBlock' block
+    else
+      console.log 'BAD BLOCK'
 
   broadcast: (msg) ->
-    @dht.FindNode @dht.hash, (err, value) ->
-      console.log 'NODE' value
-      console.log err, value
+    msgHash = Hash.Create JSON.stringify(msg.value) .Value!
+    @receivedLog[msgHash] = msg
+    msg.rebroadcast = true if not msg.rebroadcast?
+    # msg.ttl = 100 if not msg.ttl?
+
+    bucket = @dht.routing.FindNode @dht.hash
+    for node in bucket
+      node._SendMessage msg
 
 module.exports = CodeCoin

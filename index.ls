@@ -1,4 +1,5 @@
 require! {
+  path
   bluebird
   \node-dht : Dht
   \prelude-ls
@@ -13,6 +14,7 @@ require! {
   \./CodeCoin
   \./Address
   \./Miner
+  \./Storage
 }
 
 argv
@@ -23,9 +25,12 @@ argv
   .option  '-v, --verbose'                  'Verbose mode'
 
   .option  '-m, --mine'                     'Activate CPU miner'
+  .option  '    --cpus <nb>'                 'Number of core to dedicate to mining'
 
   .option  '-l, --list'                     'List address'
   .option  '-n, --new <name>'               'New address'
+
+  .option  '-b, --basedir <path>'           'Change the base directory. Default = "~/.codecoin"'
 
   .parse   process.argv
 
@@ -58,6 +63,15 @@ console.out = (...args) ->
   if argv.verbose
     map process.stdout~write, args
 
+if argv.cpu
+  Miner.CPUS = argv.cpu
+
+if argv.basedir
+  console.log argv.basedir
+  Storage.PATH = path.resolve(argv.basedir, '') + '/'
+  Storage.WALLET_PATH = path.resolve(Storage.PATH, 'wallets') + '/'
+  Storage.HEADERS_PATH = path.resolve Storage.PATH, Storage.HEADERS_FILE
+
 if argv.new
   console.log 'Creating new Wallet...'
   Address.create argv.new
@@ -67,5 +81,6 @@ else
 
   codecoin.on \ready, ->
     if argv.mine
+      console.log 'Starting miner...'
       miner = new Miner codecoin.dht.hash
       miner.start!
