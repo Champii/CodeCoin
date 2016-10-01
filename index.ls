@@ -25,12 +25,15 @@ argv
   .option  '-v, --verbose'                  'Verbose mode'
 
   .option  '-m, --mine'                     'Activate CPU miner'
-  .option  '    --cpus <nb>'                 'Number of core to dedicate to mining'
+  .option  '    --cpus <nb>'                'Number of core to dedicate to mining'
 
   .option  '-l, --list'                     'List address'
   .option  '-n, --new <name>'               'New address'
 
   .option  '-b, --basedir <path>'           'Change the base directory. Default = "~/.codecoin"'
+  .option  '-d, --debug <path>'             'Write logs to <path>'
+
+  .option  '-r, --recheck'                  'Recheck blockchain integrity'
 
   .parse   process.argv
 
@@ -63,11 +66,13 @@ console.out = (...args) ->
   if argv.verbose
     map process.stdout~write, args
 
-if argv.cpu
-  Miner.CPUS = argv.cpu
+# if argv.debug
+
+
+if argv.cpus
+  Miner.CPUS = argv.cpus
 
 if argv.basedir
-  console.log argv.basedir
   Storage.PATH = path.resolve(argv.basedir, '') + '/'
   Storage.WALLET_PATH = path.resolve(Storage.PATH, 'wallets') + '/'
   Storage.HEADERS_PATH = path.resolve Storage.PATH, Storage.HEADERS_FILE

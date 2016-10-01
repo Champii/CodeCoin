@@ -25,19 +25,56 @@ class CodeCoin extends EventEmitter
       @dht.on \bootstraped @~onDhtBootstraped
 
   onDhtBootstraped: ->
-      @dht.on \unknownMsg @~dispatch
 
-      console.log @dht.hash.Value!
+    console.log @dht.hash.Value!
 
-      @storage = new Storage
+    @storage = new Storage
 
-      @storage
-        .prepare!
-        .then ~>
-          console.progress 'Sync'
-          @sync!
+    @storage
+      .prepare!
+      .then ~>
+        @dht.on \unknownMsg @~dispatch
+      .then ~>
+        if @argv.recheck
+          console.progress 'Rechecking blockchain'
+          @recheck!
+      .then ~>
 
-  start: ->
+        console.progress 'Sync'
+        @sync!
+
+
+
+  recheck: ->
+    new Promise (resolve, reject) ~>
+      hashs = map Hash~Create, @storage.headers[1 to]
+
+      async.mapSeries hashs, Block.getFromDht, (err, blocks) ~>
+        return reject err if err?
+
+        bad = false
+        # if any (~= null), blocks
+        #   console.log 'Cannot find a block... '
+        #   return
+
+        blocks
+          |> filter (?length)
+          |> map JSON.parse >> Block.deserialize
+          |> each ~>
+            return if bad
+            if it.verify (last @storage.headers).toString \hex
+              # @storage.addHeader it.hash
+              1
+            else
+              bad := true
+              console.log 'BAD BLOCKCHAIN !'
+
+        return reject! if bad
+        console.log 'OK'
+        resolve!
+        # @ready = true
+        # @emit 'ready'
+
 
   sync: ->
     # @storage.read
@@ -48,9 +85,10 @@ class CodeCoin extends EventEmitter
 
     @expectedSyncs = []
 
+
     for node in bucket
       if node.hash.value is @dht.hash.value or
-         @argv.port is node.port and node.ip is 'localhost'
+         (@argv.port is node.port and node.ip is 'localhost')
         continue
       else
         @expectedSyncs.push sender: node.hash, answered: false
@@ -58,7 +96,17 @@ class CodeCoin extends EventEmitter
           msg: \Sync
           value: @storage.headers.length
           (err, status) ->
-            console.log err, status
+            # console.log err, status
+
+    @syncTimer = setTimeout ~>
+      if not @expectedSyncs.length
+        return
+
+      if all (-> !it.headers?), @expectedSyncs
+        return console.log 'Timeout: No answers'
+
+      @finishSync!
+    , 3000
 
   dispatch: ->
     it.sender.hash = new Hash Array.from it.sender.hash.value.data
@@ -91,44 +139,66 @@ class CodeCoin extends EventEmitter
     msg.value = map (-> Hash.Create it), msg.value
 
     if all (.answered), @expectedSyncs
-      first = @expectedSyncs.0.headers
-      res = @expectedSyncs
-        |> map (.headers)
-        |> all (=== first)
+      # console.log 'FinishSync All ansered'
+      @finishSync!
 
-      if res
-        if first.length
-          console.log first.length, 'left to sync.', first
-          blocks = []
-          first = first
-            |> map Hash~Create
-
-          async.mapSeries first, Block.getFromDht, (err, res) ~>
-            return console.log err if err?
+  finishSync: ->
+    # console.log map (.headers), @expectedSyncs
+    clearTimeout @syncTimer
 
 
-            bad = false
-            res
-              |> compact
-              |> map JSON.parse >> Block.deserialize
-              |> each ~>
-                return if bad
-                if it.verify (last @storage.headers).toString \hex
-                  @storage.addHeader it.hash
-                else
-                  bad = true
-                  console.log 'BAD BLOCKCHAIN !'
+    expectedSyncs = @expectedSyncs
+    @expectedSyncs = []
+    first = []
 
-            console.log 'Synced'
-            @ready = true
-            @emit 'ready'
+    res = expectedSyncs
+      |> filter (.headers?)
+      |> map (.headers)
+      |> filter (.length)
+      |> -> first := it.0 || []; it
+      |> all (=== first)
 
-        else
+    if res
+      if first.length
+        console.log first.length, 'left to sync.', first
+        blocks = []
+        first = first
+          |> map Hash~Create
+
+        async.mapSeries first, Block.getFromDht, (err, blocks) ~>
+          return console.log err if err?
+
+
+          bad = false
+          if any (is null), blocks
+            console.log 'Cannot find a block... '
+            return
+
+          blocks
+            |> filter (?length)
+            |> map JSON.parse >> Block.deserialize
+            |> each ~>
+              return if bad
+              if it.verify (last @storage.headers).toString \hex
+                @storage.addHeader it.hash
+              else
+                bad := true
+                console.log 'BAD BLOCKCHAIN !'
+
+          return if bad
           console.log 'Synced'
           @ready = true
           @emit 'ready'
 
+      else
+        console.log 'Synced'
+        @ready = true
+        @emit 'ready'
+        # @dht.on \unknownMsg @~dispatch
 
+    else
+      console.log 'Cannot sync, chain differs'
+      console.log map (.headers), @expectedSyncs
 
 
     # if msg.value.length
@@ -147,15 +217,16 @@ class CodeCoin extends EventEmitter
 
     @receivedLog[msgHash] = msg
 
-    if msg.rebroadcast
-      @broadcast msg
-
 
     block = Block.deserialize msg.value
-    console.log 'NEW BLOCK RECEIVED' block
     if block.verify (last codecoin.storage.headers).toString \hex
       @storage.addHeader block.hash
       @emit 'NewBlock' block
+
+      console.log 'Block'
+      if msg.rebroadcast
+        @broadcast msg
+
     else
       console.log 'BAD BLOCK'
 

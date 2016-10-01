@@ -31,7 +31,7 @@ class BlockHeader
 
   version: 1
 
-  (@previousHash, @txCount, @target = '00000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF', @timestamp = new Date, @nonce = 0) ->
+  (@previousHash, @txCount, @target = '0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF', @timestamp = new Date, @nonce = 0) ->
 
 class Block
 
@@ -53,7 +53,8 @@ class Block
       @header.previousHash is previousHash
       @hash <= @header.target
       @hash is Hash.Create JSON.stringify(@header) .Value!
-      # Verify transaction funds availability and merkelRoot validity
+      # verify coinvase transac validity
+      # Verify transactions funds availability and merkelRoot validity
     ]
 
     if not all (is true), tests

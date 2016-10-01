@@ -17,8 +17,11 @@ class Worker
     process.on \message (msg) ~>
       @scope = msg
 
+      console.log 'Start mining'
+
       h = @mine @scope.block.header, @scope.start, @scope.end
 
+      console.log 'Stop mining'
       @scope.block.hash = h.Value!
       process.send block: @scope.block
 
@@ -34,7 +37,6 @@ class Worker
     while header.target < h.Value! or header.nonce >= maxNonce
 
       middate = +new Date
-
       if (middate - lastDate) > 1000
         lastDate = middate
         process.send rate: header.nonce - lastNonce

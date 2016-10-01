@@ -68,7 +68,6 @@ class Storage
     console.log 'Height: ' + @headers.length + '.'
 
   addHeader: ->
-    console.log 'ADD HEADER', it
     @headers.push buff = Buffer.from it, \hex
     fs.appendFile Storage.HEADERS_PATH, buff
 
